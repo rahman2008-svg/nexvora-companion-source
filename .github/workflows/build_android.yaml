@@ -35,48 +35,42 @@ jobs:
         working-directory: Android/src
 
     steps:
-      # 1. Checkout repository
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # 2. Setup Java 21
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      # 3. Setup Android SDK
-      - name: Setup Android SDK
-        run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-37" \
-            "build-tools;37.0.0"
+      # Install Android SDK command-line tools
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
 
-      # 4. Setup Gradle
-      - name: Setup Gradle
+      # Install required SDK packages
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platforms;android-37" \
+            "build-tools;37.0.0" \
+            "platform-tools"
+
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 5. Validate project structure
       - name: Validate Android project
         run: |
-          echo "Checking Android project..."
           test -f settings.gradle || test -f settings.gradle.kts
           test -f gradlew
           test -d app
-          echo "Android project structure OK"
+          echo "Project structure verified"
 
-      # 6. Make Gradle executable
       - name: Make Gradle executable
         run: chmod +x gradlew
 
-      # 7. Show Gradle modules
       - name: Check Gradle modules
         run: ./gradlew projects --no-daemon
 
-      # 8. Build complete Debug APK
       - name: Build Debug APK
         run: |
           set -o pipefail
@@ -86,16 +80,15 @@ jobs:
             --warning-mode all \
             2>&1 | tee build.log
 
-      # 9. Verify APK
       - name: Verify APK
         run: |
-          APK="app/build/outputs/apk/debug/app-debug.apk"
-          test -f "$APK"
-          ls -lh "$APK"
+          find app/build/outputs/apk -type f -name "*.apk" -print
+          test -n "$(find app/build/outputs/apk/debug -type f -name "*.apk" -print -quit)"
+          ls -lh app/build/outputs/apk/debug/*.apk
           echo "APK BUILD SUCCESSFUL"
 
-      # 10. Upload APK
-      - name: Upload NexVora Companion APK
+      - name: Upload Debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: NexVora-Companion-Debug-APK
@@ -103,7 +96,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # 11. Upload build log
       - name: Upload Build Log
         if: always()
         uses: actions/upload-artifact@v4
@@ -111,8 +103,8 @@ jobs:
           name: NexVora-Companion-Build-Log
           path: Android/src/build.log
           if-no-files-found: ignore
+          retention-days: 30
 
-      # 12. Upload compiler reports if failed
       - name: Upload Build Reports
         if: failure()
         uses: actions/upload-artifact@v4
@@ -122,4 +114,5 @@ jobs:
             Android/src/app/build/reports/
             Android/src/build/reports/
           if-no-files-found: ignore
+          retention-days: 30
 
