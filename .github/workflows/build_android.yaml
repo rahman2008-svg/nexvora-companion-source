@@ -1,70 +1,125 @@
-name: Build NexVora Companion (Debug APK)
+
+name: Build NexVora Companion Android APK
 
 on:
   workflow_dispatch:
+
   push:
-    branches: ["main"]
+    branches:
+      - main
     paths:
       - 'Android/**'
       - '.github/workflows/build_android.yaml'
+
   pull_request:
-    branches: ["main"]
+    branches:
+      - main
     paths:
       - 'Android/**'
 
+permissions:
+  contents: read
+
 concurrency:
-  group: build-${{ github.ref }}
+  group: nexvora-companion-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build_debug_apk:
-    name: Build debug APK
+  build:
+    name: Build NexVora Companion
     runs-on: ubuntu-latest
     timeout-minutes: 60
+
     defaults:
       run:
-        working-directory: ./Android/src
+        working-directory: Android/src
+
     steps:
+      # 1. Checkout repository
       - name: Checkout source
         uses: actions/checkout@v4
 
+      # 2. Setup Java 21
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - name: Install Android SDK Platform 37
-        run: echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-37.0"
+      # 3. Setup Android SDK
+      - name: Setup Android SDK
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-37" \
+            "build-tools;37.0.0"
 
-      - name: Set up Gradle (with dependency caching)
+      # 4. Setup Gradle
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+      # 5. Validate project structure
+      - name: Validate Android project
+        run: |
+          echo "Checking Android project..."
+          test -f settings.gradle || test -f settings.gradle.kts
+          test -f gradlew
+          test -d app
+          echo "Android project structure OK"
 
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+      # 6. Make Gradle executable
+      - name: Make Gradle executable
+        run: chmod +x gradlew
 
-      - name: Upload APK
-        if: success()
+      # 7. Show Gradle modules
+      - name: Check Gradle modules
+        run: ./gradlew projects --no-daemon
+
+      # 8. Build complete Debug APK
+      - name: Build Debug APK
+        run: |
+          set -o pipefail
+          ./gradlew clean :app:assembleDebug \
+            --stacktrace \
+            --no-daemon \
+            --warning-mode all \
+            2>&1 | tee build.log
+
+      # 9. Verify APK
+      - name: Verify APK
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          ls -lh "$APK"
+          echo "APK BUILD SUCCESSFUL"
+
+      # 10. Upload APK
+      - name: Upload NexVora Companion APK
         uses: actions/upload-artifact@v4
         with:
-          name: NexVora-Companion-debug-apk
+          name: NexVora-Companion-Debug-APK
           path: Android/src/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 30
 
-      - name: Upload build log
+      # 11. Upload build log
+      - name: Upload Build Log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
+          name: NexVora-Companion-Build-Log
           path: Android/src/build.log
+          if-no-files-found: ignore
 
-      - name: Upload compiler reports on failure
+      # 12. Upload compiler reports if failed
+      - name: Upload Build Reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-reports
-          path: Android/src/app/build/reports/
+          name: NexVora-Companion-Build-Reports
+          path: |
+            Android/src/app/build/reports/
+            Android/src/build/reports/
           if-no-files-found: ignore
+
