@@ -1,4 +1,3 @@
-
 name: Build NexVora Companion Android APK
 
 on:
@@ -21,14 +20,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: nexvora-companion-build-${{ github.ref }}
+  group: nexvora-companion-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build NexVora Companion
+    name: Build NexVora Companion APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     defaults:
       run:
@@ -38,40 +37,62 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      # Install Android SDK command-line tools
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
-      # Install required SDK packages
+      - name: Accept Android SDK licenses
+        run: |
+          set -e
+          yes | sdkmanager --licenses
+
       - name: Install Android SDK packages
         run: |
-          sdkmanager "platforms;android-37" \
-            "build-tools;37.0.0" \
+          set -euo pipefail
+          sdkmanager --install \
+            "platforms;android-37.0" \
             "platform-tools"
+          sdkmanager --list_installed
 
-      - name: Set up Gradle
+      - name: Configure Android 37 SDK compatibility
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -d "$SDK/platforms/android-37.0" ] && \
+             [ ! -e "$SDK/platforms/android-37" ]; then
+            ln -s android-37.0 "$SDK/platforms/android-37"
+          fi
+          ls -la "$SDK/platforms"
+
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Validate Android project
         run: |
-          test -f settings.gradle || test -f settings.gradle.kts
+          set -e
+          test -f settings.gradle.kts
+          test -f build.gradle.kts
           test -f gradlew
-          test -d app
-          echo "Project structure verified"
+          test -f app/build.gradle.kts
+          echo "Android project structure verified."
 
       - name: Make Gradle executable
         run: chmod +x gradlew
 
+      - name: Check Gradle environment
+        run: |
+          java -version
+          ./gradlew --version
+
       - name: Check Gradle modules
         run: ./gradlew projects --no-daemon
 
-      - name: Build Debug APK
+      - name: Build NexVora Companion APK
         run: |
           set -o pipefail
           ./gradlew clean :app:assembleDebug \
@@ -82,12 +103,16 @@ jobs:
 
       - name: Verify APK
         run: |
-          find app/build/outputs/apk -type f -name "*.apk" -print
-          test -n "$(find app/build/outputs/apk/debug -type f -name "*.apk" -print -quit)"
-          ls -lh app/build/outputs/apk/debug/*.apk
-          echo "APK BUILD SUCCESSFUL"
+          set -e
+          APK_DIR="app/build/outputs/apk/debug"
+          test -d "$APK_DIR"
+          find "$APK_DIR" -name "*.apk" -type f
+          APK="$(find "$APK_DIR" -name "*.apk" -type f | head -n 1)"
+          test -n "$APK"
+          ls -lh "$APK"
+          echo "APK successfully generated."
 
-      - name: Upload Debug APK
+      - name: Upload NexVora Companion Debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
@@ -115,4 +140,3 @@ jobs:
             Android/src/build/reports/
           if-no-files-found: ignore
           retention-days: 30
-
