@@ -1,0 +1,63 @@
+
+name: NexVora Companion - Direct APK Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Grant Gradle Permission
+        run: chmod +x ./gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Find and Rename APK
+        shell: bash
+        run: |
+          APK_PATH=$(find . -type f \
+            -path '*/build/outputs/apk/debug/*.apk' \
+            | head -n 1)
+
+          if [ -z "$APK_PATH" ]; then
+            echo "ERROR: APK file not found!"
+            exit 1
+          fi
+
+          mkdir -p release-apk
+          cp "$APK_PATH" release-apk/NexVora-Companion.apk
+
+          echo "APK successfully prepared:"
+          ls -lh release-apk/
+
+      - name: Publish Direct APK Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: companion-build-${{ github.run_number }}
+          name: NexVora Companion Build ${{ github.run_number }}
+          body: |
+            NexVora Companion Android APK
+
+            Automatically built using GitHub Actions.
+          files: release-apk/NexVora-Companion.apk
+          make_latest: true
+          fail_on_unmatched_files: true
